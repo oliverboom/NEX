@@ -1,0 +1,119 @@
+import pandas as pd
+import time
+import numpy as np
+
+'''
+'''
+
+
+def read_file(file_location):
+
+    df = pd.read_csv(file_location, engine='python', error_bad_lines=False)
+    return df
+
+
+def df_reformater(original_df):
+    """ Taking string format and turning into floats"""
+
+    counter = 0
+    new_df = []
+
+    if isinstance(original_df[0], float) == False:
+
+        for element in original_df:
+            counter += 1
+
+            if ',' in element:
+                element = element.replace(',', '')
+            new_df.append(float(element))
+
+        return new_df
+
+    else:
+
+        return original_df
+
+
+def split_string(df, str_2_split, beginning, split_location, end, index1, index2):
+    """ Splitting Out String"""
+
+    df[index1] = str_2_split.str[beginning:split_location]
+    df[index2] = str_2_split.str[split_location:end]
+    cols = list(df)
+
+    if cols[0] == 'LP FloorCode':
+        cols.insert(1, cols.pop(cols.index(index1)))
+        cols.insert(2, cols.pop(cols.index(index2)))
+    else:
+        cols.insert(0, cols.pop(cols.index(index1)))
+        cols.insert(1, cols.pop(cols.index(index2)))
+
+    df = df.ix[:, cols]
+    return df
+
+
+def write_file(df, write_location, sheetname):
+
+    df.to_excel(write_location, sheetname)
+    return
+
+
+
+def main():
+
+    start_time = time.clock()
+
+    df = read_file(r"\\newco.global\newcoroot\Global\EMEA\userdir$\o_boom\Oliver\LC_Counterparty.csv")
+
+    '''
+    Splitting out the Floor code
+    To make it concatenate-able
+    Then concatenating
+    '''
+
+    str_2_split = df["LP FloorCode"].astype(str)
+    df = split_string(df, str_2_split, 0, 3, 4, 'LP Floor ID', 'Tier Code')
+    df['MarkToMid 0s'] = df_reformater(df['MarkToMid 0s'])
+    df['Traded Vol (USD m)'] = df_reformater(df['Traded Vol (USD m)'])
+    df_floor_code = df.groupby(['LP FloorCode']).agg({'MarkToMid 0s': np.mean, 'Traded Vol (USD m)': np.sum})
+
+    '''
+    Same again but need to use index
+    instead of column for this time
+    '''
+
+    str_2_split_2 = df_floor_code.index
+    df2 = split_string(df_floor_code, str_2_split_2, 0, 3, 4, 'LP Floor ID', 'Tier Code')
+
+    '''
+    Write dataframe information to xlsx
+    '''
+
+    write_location = pd.ExcelWriter(r"\\newco.global\newcoroot\Global\EMEA"
+                                    r"\userdir$\o_boom\Oliver\LC_Counterparty_Out.xlsx")
+    write_file(df, write_location, 'Sheet 1')
+    write_file(df2, write_location, 'Sheet 2')
+    write_location.save()
+
+    df2.sort_values(by=['LP Floor ID', 'MarkToMid 0s'], ascending=[True, True], inplace=True)
+
+    ranking = ['Platinum', 'Gold', 'Silver', 'Bronze', 'Steel', 'Tin']
+
+    # for index, row in df.iterrows():
+    #     print(row)
+
+    # a = df2.loc[df2['LP Floor ID'] == names[0]]
+    # b = a.sort_values(by=['MarkToMid 0s'], ascending=True)
+    #
+    # b.iloc[0]['Tier Code'] = 'Platinum'
+
+    #for element in names:
+
+    with pd.option_context('display.max_rows', None, 'display.max_columns', 5):
+        print(df2)
+
+
+    print(time.clock() - start_time, "seconds")
+
+
+main()
