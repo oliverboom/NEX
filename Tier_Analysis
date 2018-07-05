@@ -1,0 +1,220 @@
+import pandas as pd
+import numpy as np
+import time
+import Tier_Pull
+import datetime
+'''
+'''
+
+
+def represent_int(s):
+    try:
+        int(s)
+        return True
+    except ValueError:
+        return False
+
+
+def nan_column(df, name):
+    df[name] = np.nan
+    return df
+
+def df_load():
+    """
+    Loading the file names to dataframes
+    :return:
+    """
+
+    df = Tier_Pull.read_xlsx_file(r"\\newco.global\newcoroot\Global\EMEA\userdir$"
+                                  r"\o_boom\Oliver\LC_Counterparty_Out.xlsx",
+                                  "Performance")
+
+    df_ranking = Tier_Pull.read_xlsx_file(r"\\newco.global\newcoroot\Global\EMEA\userdir$"
+                                          r"\o_boom\Oliver\LC_Counterparty_Out.xlsx",
+                                          "Tier Ranking")
+
+    df_tier_change = Tier_Pull.read_xlsx_file(r"\\newco.global\newcoroot\Global\EMEA\userdir$"
+                                              r"\o_boom\Oliver\LC_Counterparty_Out.xlsx",
+                                              "Tier Changes")
+
+    return df, df_ranking, df_tier_change
+
+
+def count_creation():
+    count = 0
+    count_int = 0
+    count_str = 0
+    return count, count_int, count_str
+
+
+def blank_df_creation():
+    c = pd.DataFrame()
+    d = pd.DataFrame()
+    e = pd.DataFrame()
+    f = pd.DataFrame()
+    return c, d, e, f
+
+def time_splitter(df):
+    """Splitting the hit time into separate columns"""
+
+    df['Date'] = df.TIME.str.split(' ').str.get(0)
+    df['Time'] = df.TIME.str.split(' ').str.get(1)
+    df.drop(['TIME'], axis=1, inplace=True)
+    cols = list(df)
+    cols.insert(0, cols.pop(cols.index('Date')))
+    cols.insert(1, cols.pop(cols.index('Time')))
+    df = df.ix[:, cols]
+    return df
+
+
+def represent_str(s):
+    try:
+        str(s)
+        return True
+    except ValueError:
+        return False
+
+
+def empty_df(df):
+    df.drop(df.index, inplace=True)
+    return df
+
+
+def df_list_creationg(df_list):
+    dictionary = {}
+    for name in df_list:
+        dictionary[name] = pd.DataFrame()
+
+    return dictionary
+
+
+def date_coversion(df):
+    """
+    Converts df to datetime object, so can be used
+    for sorting in ascending order
+    :param df:
+    :return: datetime object
+    """
+    df['Date'] = pd.to_datetime(df.Date)
+    df.sort_values(by='Date', inplace=True)
+    df = df.reset_index()
+    return df
+
+
+def days_on_tier(df, final_date):
+    """
+    Takes dataframe and finds the amount of days between
+    a row and the next row after it
+    :param df:
+    :param final_date:
+    :return: a list containing the amount of days
+    """
+    delta_l = []
+
+    for index, row in df.iterrows():
+
+        if index < len(df) - 1:
+            d0 = df.iloc[index]['Date']
+            d1 = df.iloc[index + 1]['Date']
+            delta = d1 - d0
+            delta_l.append(delta)
+        else:
+            d0 = df.iloc[index]['Date']
+            delta = final_date - d0
+            delta_l.append(delta)
+
+    return delta_l
+
+
+def main():
+    start_time = time.clock()
+
+    df, df_ranking, df_tier_change = df_load()
+
+    LC_list = df_tier_change['LC_ACCOUNT'].unique()
+
+    '''
+    Cycling through LC and LP 
+    lists and finding the LCs
+    that have had an entitlement 
+    added and removed; ie a tier
+    change
+    '''
+
+    integer_df = pd.DataFrame()
+    str_df = pd.DataFrame()
+    final_date = datetime.datetime(2018, 6, 30, 0, 0, 0)
+
+    for LC in LC_list:
+
+        a = df_tier_change.loc[df_tier_change['LC_ACCOUNT'] == LC]
+        LP_list = a['LP Floor ID'].unique()
+
+        for LP in LP_list:
+
+            b = a.loc[df_tier_change['LP Floor ID'] == LP]
+
+            count, count_int, count_str = count_creation()
+            c, d, e, f = blank_df_creation()
+            delta_list_int = []
+            delta_list_str = []
+            integer_df = empty_df(integer_df)
+            str_df = empty_df(str_df)
+
+            for index, row in b.iterrows():
+                count += 1
+                '''
+                https://medium.com/@rtjeannier/pandas-101-cont-9d061cb73bfc
+                '''
+
+                if represent_int(row['Tier Code']):
+                    integer_df = integer_df.append(row, ignore_index=True)
+                    count_int += 1
+
+                elif represent_str(row['Tier Code']):
+                    str_df = str_df.append(row, ignore_index=True)
+                    count_str += 1
+
+                if count == len(b):
+
+                    '''
+                    At this point you have unique LP
+                    and unique LC code, but a mix of 
+                    tiers between sweepable and non 
+                    sweepable. Want to separate out 
+                    and find out if pairs of added/
+                    removed 
+                    '''
+
+                    if not integer_df.empty:
+                        c = integer_df.loc[integer_df['STATUS'] == 'Entitlement removed']
+                        d = integer_df.loc[integer_df['STATUS'] == 'Entitlement added']
+
+                        if not c.empty and not d.empty:
+                            sweepable_df = pd.concat([c, d])
+                            q1 = date_coversion(sweepable_df)
+
+                            #sweepable = integer_df[['LP Floor ID', 'LC_ACCOUNT']]
+                            #
+                            #print('Tier Change for:', sweepable)
+                            #sweepable = empty_df(sweepable)
+
+                    if not str_df.empty:
+                        e = str_df.loc[str_df['STATUS'] == 'Entitlement removed']
+                        f = str_df.loc[str_df['STATUS'] == 'Entitlement added']
+                        if not e.empty and not f.empty:
+
+                            non_sweepable_df = pd.concat([e, f])
+
+                            non_sweepable = str_df[['LP Floor ID', 'LC_ACCOUNT']]
+                            #print('Tier Change for:', non_sweepable)
+                            non_sweepable = empty_df(non_sweepable)
+
+
+
+    print(sweepable_df)
+    print(time.clock() - start_time, "seconds")
+
+
+if __name__ == '__main__':
+    main()
