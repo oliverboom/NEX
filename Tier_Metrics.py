@@ -1,4 +1,5 @@
 from collections import Counter
+import math
 import numpy as np
 import pandas as pd
 import Tier_Pull
@@ -9,21 +10,18 @@ pd.options.mode.chained_assignment = None
 """"""
 
 
-def df_load():
+def df_load(path):
     """
     Loads the file names to dataframes
     """
 
-    df = Tier_Pull.read_xlsx_file(r"\\newco.global\newcoroot\Global\EMEA\userdir$"
-                                  r"\o_boom\Oliver\LC_Counterparty_Analysis.xlsx",
+    df = Tier_Pull.read_xlsx_file(path + "\LC_Counterparty_Analysis.xlsx",
                                   "Performance")
 
-    df_ranking = Tier_Pull.read_xlsx_file(r"\\newco.global\newcoroot\Global\EMEA\userdir$"
-                                          r"\o_boom\Oliver\LC_Counterparty_Analysis.xlsx",
+    df_ranking = Tier_Pull.read_xlsx_file(path + "\LC_Counterparty_Analysis.xlsx",
                                           "Tier Ranking")
 
-    df_tier_change = Tier_Pull.read_xlsx_file(r"\\newco.global\newcoroot\Global\EMEA\userdir$"
-                                              r"\o_boom\Oliver\LC_Counterparty_Analysis.xlsx",
+    df_tier_change = Tier_Pull.read_xlsx_file(path + "\LC_Counterparty_Analysis.xlsx",
                                               "Tier Changes")
 
     return df, df_ranking, df_tier_change
@@ -51,15 +49,15 @@ def target_LP_LC(df):
 
                 filter_LP = filter_LC.loc[(filter_LC['LP Floor ID'] == LP)]
                 ADV_add(filter_LP)
-                metric_analyser(filter_LP)
+                filter_LP = metric_analyser(filter_LP)
 
                 for index, row in filter_LP.iterrows():
                     df.loc[(df['TIME'] == row['TIME']) &
                            (df['LC_ACCOUNT'] == row['LC_ACCOUNT']) &
-                           (df['LP Floor ID'] == row['LP Floor ID']), 'ADV'] = filter_LP['ADV']
+                           (df['LP Floor ID'] == row['LP Floor ID']), 'ADV Change'] = filter_LP['ADV Change']
                     df.loc[(df['TIME'] == row['TIME']) &
                            (df['LC_ACCOUNT'] == row['LC_ACCOUNT']) &
-                           (df['LP Floor ID'] == row['LP Floor ID']), 'ADV Change'] = filter_LP['ADV Change']
+                           (df['LP Floor ID'] == row['LP Floor ID']), 'ADV'] = filter_LP['ADV']
                     df.loc[(df['TIME'] == row['TIME']) &
                            (df['LC_ACCOUNT'] == row['LC_ACCOUNT']) &
                            (df['LP Floor ID'] == row['LP Floor ID']), 'M2M Change'] = filter_LP['M2M Change']
@@ -68,15 +66,28 @@ def target_LP_LC(df):
                            (df['LP Floor ID'] == row['LP Floor ID']), 'MI Change'] = filter_LP['MI Change']
                     df.loc[(df['TIME'] == row['TIME']) &
                            (df['LC_ACCOUNT'] == row['LC_ACCOUNT']) &
+                           (df['LP Floor ID'] == row['LP Floor ID']), 'ALPHA Change'] = filter_LP['ALPHA Change']
+                    df.loc[(df['TIME'] == row['TIME']) &
+                           (df['LC_ACCOUNT'] == row['LC_ACCOUNT']) &
                            (df['LP Floor ID'] == row['LP Floor ID']), 'LP Reject % Change'] = filter_LP[
                         'LP Reject % Change']
                     df.loc[(df['TIME'] == row['TIME']) &
                            (df['LC_ACCOUNT'] == row['LC_ACCOUNT']) &
-                           (df['LP Floor ID'] == row['LP Floor ID']), 'ALPHA Change'] = filter_LP['ALPHA Change']
-                    df.loc[(df['TIME'] == row['TIME']) &
-                           (df['LC_ACCOUNT'] == row['LC_ACCOUNT']) &
                            (df['LP Floor ID'] == row['LP Floor ID']),
                            'Tier Change Impact'] = filter_LP['Tier Change Impact']
+
+    destination = df.columns.get_loc("MarkToMid 0s")
+    cols = df.columns.tolist()
+    cols.remove('ADV')
+    cols.insert(destination, 'ADV')
+    df = df[cols]
+    destination = df.columns.get_loc("MarkToMid 0s")
+    cols = df.columns.tolist()
+    cols.remove('ADV')
+    cols.insert(destination, 'ADV')
+    df = df[cols]
+
+
     return df
 
 
@@ -107,71 +118,88 @@ def metric_analyser(df):
     df_operate = df.reset_index()
     for index, row in df_operate.iterrows():
         if index > 0:
+            backtrack = 1
+            while backtrack < index and \
+                    (
+                    math.isnan(df_operate['ADV'][index - backtrack]) or
+                    math.isnan(df_operate['MarkToMid 0s'][index - backtrack]) or
+                    math.isnan(df_operate['EBS Avg. MI 30s'][index - backtrack]) or
+                    math.isnan(df_operate['LP Reject %'][index - backtrack]) or
+                    math.isnan(df_operate['Net Alpha (USD per mil)'][index - backtrack])
+                    ):
+                backtrack += 1
+                """
+                Trying to establish the rule for going back through the code until it find a row which has data in it
+                if no data found should keep backtracking until no more rows left"""
 
-            if df_operate['ADV'][index] > df_operate['ADV'][(index - 1)]:
+            if df_operate['ADV'][index] > df_operate['ADV'][(index - backtrack)]:
                 df.loc[(df['TIME'] == row['TIME']) &
-                       (df['LC_ACCOUNT'] == row['LC_ACCOUNT']), 'ADV change'] = 1
-            elif df_operate['ADV'][index] < df_operate['ADV'][(index - 1)]:
+                       (df['LC_ACCOUNT'] == row['LC_ACCOUNT']), 'ADV Change'] = 1
+            elif df_operate['ADV'][index] < df_operate['ADV'][(index - backtrack)]:
                 df.loc[(df['TIME'] == row['TIME']) &
                        (df['LC_ACCOUNT'] == row['LC_ACCOUNT']), 'ADV Change'] = -1
-            elif (df_operate['ADV'][index] == df_operate['ADV'][(index - 1)] and
-                  df_operate['ADV'][index] != np.nan):
+            elif (df_operate['ADV'][index] ==
+                  df_operate['ADV'][(index - backtrack)] and
+                  not math.isnan(df_operate['ADV'][index])):
                 df.loc[(df['TIME'] == row['TIME']) &
                        (df['LC_ACCOUNT'] == row['LC_ACCOUNT']), 'ADV Change'] = 0
             else:
                 df.loc[(df['TIME'] == row['TIME']) &
                        (df['LC_ACCOUNT'] == row['LC_ACCOUNT']), 'ADV Change'] = np.nan
 
-            if df_operate['MarkToMid 0s'][index] < df_operate['MarkToMid 0s'][(index - 1)]:
+            if df_operate['MarkToMid 0s'][index] < df_operate['MarkToMid 0s'][(index - backtrack)]:
                 df.loc[(df['TIME'] == row['TIME']) &
                        (df['LC_ACCOUNT'] == row['LC_ACCOUNT']), 'M2M Change'] = 1
-            elif df_operate['MarkToMid 0s'][index] > df_operate['MarkToMid 0s'][(index - 1)]:
+            elif df_operate['MarkToMid 0s'][index] > df_operate['MarkToMid 0s'][(index - backtrack)]:
                 df.loc[(df['TIME'] == row['TIME']) &
                        (df['LC_ACCOUNT'] == row['LC_ACCOUNT']), 'M2M Change'] = -1
-            elif (df_operate['MarkToMid 0s'][index] == df_operate['MarkToMid 0s'][(index - 1)] and
-                  df_operate['MarkToMid 0s'][index] != np.nan):
+            elif (df_operate['MarkToMid 0s'][index] == df_operate['MarkToMid 0s'][(index - backtrack)] and
+                  not math.isnan(df_operate['MarkToMid 0s'][index])):
                 df.loc[(df['TIME'] == row['TIME']) &
                        (df['LC_ACCOUNT'] == row['LC_ACCOUNT']), 'M2M Change'] = 0
             else:
                 df.loc[(df['TIME'] == row['TIME']) &
                        (df['LC_ACCOUNT'] == row['LC_ACCOUNT']), 'M2M Change'] = np.nan
 
-            if df_operate['EBS Avg. MI 30s'][index] < df_operate['EBS Avg. MI 30s'][(index - 1)]:
+            if df_operate['EBS Avg. MI 30s'][index] < df_operate['EBS Avg. MI 30s'][(index - backtrack)]:
                 df.loc[(df['TIME'] == row['TIME']) &
                        (df['LC_ACCOUNT'] == row['LC_ACCOUNT']), 'MI Change'] = 1
-            elif df_operate['EBS Avg. MI 30s'][index] > df_operate['EBS Avg. MI 30s'][(index - 1)]:
+            elif df_operate['EBS Avg. MI 30s'][index] > df_operate['EBS Avg. MI 30s'][(index - backtrack)]:
                 df.loc[(df['TIME'] == row['TIME']) &
                        (df['LC_ACCOUNT'] == row['LC_ACCOUNT']), 'MI Change'] = -1
-            elif (df_operate['EBS Avg. MI 30s'][index] == df_operate['EBS Avg. MI 30s'][(index - 1)] and
-                  df_operate['EBS Avg. MI 30s'][index] != np.nan):
+            elif (df_operate['EBS Avg. MI 30s'][index] == df_operate['EBS Avg. MI 30s'][(index - backtrack)] and
+                  not math.isnan(df_operate['EBS Avg. MI 30s'][index])):
                 df.loc[(df['TIME'] == row['TIME']) &
                        (df['LC_ACCOUNT'] == row['LC_ACCOUNT']), 'MI Change'] = 0
             else:
                 df.loc[(df['TIME'] == row['TIME']) &
                        (df['LC_ACCOUNT'] == row['LC_ACCOUNT']), 'MI Change'] = np.nan
 
-            if df_operate['LP Reject %'][index] < df_operate['LP Reject %'][(index - 1)]:
+            if df_operate['LP Reject %'][index] < df_operate['LP Reject %'][(index - backtrack)]:
                 df.loc[(df['TIME'] == row['TIME']) &
                        (df['LC_ACCOUNT'] == row['LC_ACCOUNT']), 'LP Reject % Change'] = 1
-            elif df_operate['LP Reject %'][index] > df_operate['LP Reject %'][(index - 1)]:
+            elif df_operate['LP Reject %'][index] > df_operate['LP Reject %'][(index - backtrack)]:
                 df.loc[(df['TIME'] == row['TIME']) &
                        (df['LC_ACCOUNT'] == row['LC_ACCOUNT']), 'LP Reject % Change'] = -1
-            elif (df_operate['LP Reject %'][index] == df_operate['LP Reject %'][(index - 1)] and
-                  df_operate['LP Reject %'][index] != np.nan):
+            elif (df_operate['LP Reject %'][index] == df_operate['LP Reject %'][(index - backtrack)] and
+                  not math.isnan(df_operate['LP Reject %'][index])):
                 df.loc[(df['TIME'] == row['TIME']) &
                        (df['LC_ACCOUNT'] == row['LC_ACCOUNT']), 'LP Reject % Change'] = 0
             else:
                 df.loc[(df['TIME'] == row['TIME']) &
                        (df['LC_ACCOUNT'] == row['LC_ACCOUNT']), 'LP Reject % Change'] = np.nan
 
-            if df_operate['Net Alpha (USD per mil)'][index] > df_operate['Net Alpha (USD per mil)'][(index - 1)]:
+            if df_operate['Net Alpha (USD per mil)'][index] > df_operate[
+                'Net Alpha (USD per mil)'][(index - backtrack)]:
                 df.loc[(df['TIME'] == row['TIME']) &
                        (df['LC_ACCOUNT'] == row['LC_ACCOUNT']), 'ALPHA Change'] = 1
-            elif df_operate['Net Alpha (USD per mil)'][index] < df_operate['Net Alpha (USD per mil)'][(index - 1)]:
+            elif df_operate['Net Alpha (USD per mil)'][index] < df_operate[
+                'Net Alpha (USD per mil)'][(index - backtrack)]:
                 df.loc[(df['TIME'] == row['TIME']) &
                        (df['LC_ACCOUNT'] == row['LC_ACCOUNT']), 'ALPHA Change'] = -1
-            elif (df_operate['Net Alpha (USD per mil)'][index] == df_operate['Net Alpha (USD per mil)'][(index - 1)] and
-                  df_operate['Net Alpha (USD per mil)'][index] != np.nan):
+            elif (df_operate['Net Alpha (USD per mil)'][index] ==
+                  df_operate['Net Alpha (USD per mil)'][(index - backtrack)] and
+                  not math.isnan(df_operate['Net Alpha (USD per mil)'][index])):
                 df.loc[(df['TIME'] == row['TIME']) &
                        (df['LC_ACCOUNT'] == row['LC_ACCOUNT']), 'ALPHA Change'] = 0
             else:
@@ -203,9 +231,9 @@ def metric_analyser(df):
     return df
 
 
-def excel_writer(df, df2):
-    path = r"\\newco.global\newcoroot\Global\EMEA\userdir$\o_boom\Oliver\LC_Counterparty_Met.xlsx"
-    writer = pd.ExcelWriter(path)
+def excel_writer(df, df2, path):
+    write_location = path + "\LC_Counterparty_Met.xlsx"
+    writer = pd.ExcelWriter(write_location)
     df.to_excel(writer, sheet_name='Tier Change', index=False)
     df2.to_excel(writer, sheet_name='Recommended Tiers', index=False)
     writer.save()
@@ -310,30 +338,35 @@ def best_rank(df):
     return df_best_tier
 
 
+def rearrange_columns(df):
+    destination = df.columns.get_loc("MarkToMid 0s")
+    cols = df.columns.tolist()
+    cols.remove('ADV')
+    cols.insert(destination, 'ADV')
+    df = df[cols]
+    return df
+
+
 def main():
     start_time_TM = time.clock()
 
-    df_performance, df_ranking, df_tier_change = df_load()
+    path = Tier_Pull.path_set()
+
+    df_performance, df_ranking, df_tier_change = df_load(path)
 
     df_tier_change = target_LP_LC(df_tier_change)
-    print(time.clock() - start_time_TM, "seconds")
-    """
-    Currenttly index compared with index infront so does not work for the single rowed intial index
-    """
 
     df_tier_change = verdict(df_tier_change)
 
     df_best_tier = best_rank(df_tier_change)
-    print(time.clock() - start_time_TM, "seconds")
 
-    excel_writer(df_tier_change, df_best_tier)
+    df_tier_change = rearrange_columns(df_tier_change)
 
-    print(time.clock() - start_time_TM, "seconds")
+    excel_writer(df_tier_change, df_best_tier, path)
+
+    print('Tier Metric,', time.clock() - start_time_TM, "seconds")
 
 
 if __name__ == '__main__':
     main()
 
-'''
-Next task is to look at the added/removed criteria
-'''

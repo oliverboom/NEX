@@ -1,5 +1,4 @@
-from openpyxl import load_workbook
-import datetime
+import exe
 import pandas as pd
 import Tier_Pull
 import time
@@ -38,45 +37,55 @@ def represent_str(s):
         return False
 
 
-def df_load(file_selection):
+def file_selection_set():
+    """
+    Determining if file is being run via exe.py or if run as a standalone
+    """
+    while True:
+        try:
+            exe.path
+        except AttributeError:
+            print('Using path defined in local file')
+            file_selection = r'\LC_Counterparty_Analysis.xlsx'
+            break
+        else:
+            file_selection = r'\LC_Ranking_Out.xlsx'
+            break
+    return file_selection
+
+
+def df_load(file_selection, path):
     """
     Loads the file names to dataframes
     """
 
-    df = Tier_Pull.read_xlsx_file(r"\\newco.global\newcoroot\Global\EMEA\userdir$"
-                                  r"\o_boom\Oliver" + file_selection,
+    df = Tier_Pull.read_xlsx_file(path + file_selection,
                                   "Performance")
 
-    df_ranking = Tier_Pull.read_xlsx_file(r"\\newco.global\newcoroot\Global\EMEA\userdir$"
-                                          r"\o_boom\Oliver" + file_selection,
+    df_ranking = Tier_Pull.read_xlsx_file(path + file_selection,
                                           "Tier Ranking")
 
-    df_tier_change = Tier_Pull.read_xlsx_file(r"\\newco.global\newcoroot\Global\EMEA\userdir$"
-                                              r"\o_boom\Oliver" + file_selection,
+    df_tier_change = Tier_Pull.read_xlsx_file(path + file_selection,
                                               "Tier Changes")
 
-    df_kdb_ALPHA = Tier_Pull.read_xlsx_file(r"\\newco.global\newcoroot\Global\EMEA\userdir$"
-                                            r"\o_boom\Oliver\KDB_TIER_INFO_ALPHA.xlsx",
+    df_kdb_ALPHA = Tier_Pull.read_xlsx_file(path + "\KDB_TIER_INFO_ALPHA.xlsx",
                                             "KDB_TIER_INFO_ALPHA")
 
-    df_kdb_MI = Tier_Pull.read_xlsx_file(r"\\newco.global\newcoroot\Global\EMEA\userdir$"
-                                         r"\o_boom\Oliver\KDB_TIER_INFO_MI.xlsx",
+    df_kdb_MI = Tier_Pull.read_xlsx_file(path + "\KDB_TIER_INFO_MI.xlsx",
                                          "KDB_TIER_INFO_MI")
 
     return df, df_ranking, df_tier_change, df_kdb_ALPHA, df_kdb_MI
 
 
-def df_quick_look_metrics():
+def df_quick_look_metrics(path):
     """
     Loads the file names to dataframes
     """
 
-    df_added_removed = Tier_Pull.read_xlsx_file(r"\\newco.global\newcoroot\Global\EMEA\userdir$"
-                                                r"\o_boom\Oliver\LC_Counterparty_Analysis.xlsx",
+    df_added_removed = Tier_Pull.read_xlsx_file(path + "\LC_Counterparty_Analysis.xlsx",
                                                 "Added_Removed")
 
-    df_Metrics = Tier_Pull.read_xlsx_file(r"\\newco.global\newcoroot\Global\EMEA\userdir$"
-                                          r"\o_boom\Oliver\LC_Counterparty_Analysis.xlsx",
+    df_Metrics = Tier_Pull.read_xlsx_file(path + "LC_Counterparty_Analysis.xlsx",
                                           "Added_Removed")
 
     return df_added_removed, df_Metrics
@@ -104,13 +113,13 @@ def nan_column(df, name):
     return df
 
 
-def excel_writer(ws_dict, df_analysis, df_analysis_2, df_LP_1, df_LP_2, df_LC_1, df_LC_2):
+def excel_writer(ws_dict, df_analysis, df_analysis_2, df_LP_1, df_LP_2, df_LC_1, df_LC_2, path):
     """
     Writes the dataframe to a new file, should
     update this to append to existing file later
     """
-    path = r"\\newco.global\newcoroot\Global\EMEA\userdir$\o_boom\Oliver\LC_Counterparty_Analysis.xlsx"
-    writer = pd.ExcelWriter(path)
+    writer_location = path + "\LC_Counterparty_Analysis.xlsx"
+    writer = pd.ExcelWriter(writer_location)
     for ws in ws_dict:
         df = ws_dict[ws]
         df.to_excel(writer, ws)
@@ -121,20 +130,6 @@ def excel_writer(ws_dict, df_analysis, df_analysis_2, df_LP_1, df_LP_2, df_LC_1,
     df_LP_2.to_excel(writer, sheet_name='Metrics', startcol=7, index=False)
     df_LC_1.to_excel(writer, sheet_name='Metrics', startcol=0, startrow=10, index=False)
     df_LC_2.to_excel(writer, sheet_name='Metrics', startcol=7, startrow=10, index=False)
-    writer.save()
-    writer.close()
-    return
-
-
-def excel_appender(df):
-    """
-    Appender rather than writer
-    """
-    path = r"\\newco.global\newcoroot\Global\EMEA\userdir$\o_boom\Oliver\LC_Counterparty_Analysis.xlsx"
-    book = load_workbook(path)
-    writer = pd.ExcelWriter(path, engine='openpyxl')
-    writer.book = book
-    df.to_excel(writer, sheet_name='Update')
     writer.save()
     writer.close()
     return
@@ -161,7 +156,6 @@ def date_order(df):
     """
     Need to check that when added the drop=True condition that it hasnt resulted in the dates getting mixed up
     """
-
     return df
 
 
@@ -322,6 +316,7 @@ def large_and_small(df, LP_LC):
 
 
 def initial_tier_initilization(df, start_date):
+
     sweep_list = df['Sweep'].unique()
     status_list = df['STATUS'].unique()
     if 'Entitlement initialized' in status_list:
@@ -368,13 +363,6 @@ def currency_primer(df):
 
 
 def row_of_interest(df_tier_change, df_kdb_ALPHA, df_kdb_MI):
-    # df_tier_change = df_tier_change.loc[(df_tier_change['LP_ACCOUNT'] == 'ZSSB') &
-    #                                     (df_tier_change['LC_ACCOUNT'] == 'BNSQ') &
-    #                                     (df_tier_change['STATUS'] == 'Entitlement added')]
-    #
-    # df_kdb_ALPHA = df_kdb_ALPHA.loc[(df_kdb_ALPHA['counterParty'] == 'ZSSB') &
-    #                                     (df_kdb_ALPHA['floorCode'] == 'BNSQ')]
-
 
     for index, row in df_tier_change.iterrows():
 
@@ -388,6 +376,7 @@ def row_of_interest(df_tier_change, df_kdb_ALPHA, df_kdb_MI):
                                       (df_kdb_MI['floorCode'] == row['LC_ACCOUNT']) &
                                       (df_kdb_MI['symList'] == row['CCY_PAIR'])]
 
+
         '''
         Can use these rows for visualising what data is not in the dataframe
         Although for full run have these lines inactive otherwise causes
@@ -397,54 +386,71 @@ def row_of_interest(df_tier_change, df_kdb_ALPHA, df_kdb_MI):
         target_row_MI = target_row_MI.fillna('NA')
         '''
         if not target_row_ALPHA.empty:
+            VOL = target_row_ALPHA['baseDeals']
+            VOL = VOL.iloc[0]
             df_tier_change.loc[(df_tier_change['LP_ACCOUNT'] == row['LP_ACCOUNT']) &
                                (df_tier_change['LC_ACCOUNT'] == row['LC_ACCOUNT']) &
                                (df_tier_change['STATUS'] == 'Entitlement added') &
                                (df_tier_change['TIME'] == row['TIME']),
-                               'Traded Vol (m)'] = target_row_ALPHA['baseDeals']
+                               'Traded Vol (m)'] = VOL
 
         if not target_row_MI.empty:
-            df_tier_change.loc[(df_tier_change['LP_ACCOUNT'] == row['LP_ACCOUNT']) &
-                               (df_tier_change['LC_ACCOUNT'] == row['LC_ACCOUNT']) &
-                               (df_tier_change['STATUS'] == 'Entitlement added') &
-                               (df_tier_change['TIME'] == row['TIME']),
-                               'MarkToMid 0s'] = target_row_MI['PnLPm0']
+            M2M = target_row_MI['PnLPm0']
+            MI = target_row_MI['PnLPm30']
+            M2M = M2M.iloc[0]
+            MI = MI.iloc[0]
 
             df_tier_change.loc[(df_tier_change['LP_ACCOUNT'] == row['LP_ACCOUNT']) &
                                (df_tier_change['LC_ACCOUNT'] == row['LC_ACCOUNT']) &
                                (df_tier_change['STATUS'] == 'Entitlement added') &
                                (df_tier_change['TIME'] == row['TIME']),
-                               'EBS Avg. MI 30s'] = target_row_MI['PnLPm30']
+                               'MarkToMid 0s'] = M2M
+
+            df_tier_change.loc[(df_tier_change['LP_ACCOUNT'] == row['LP_ACCOUNT']) &
+                               (df_tier_change['LC_ACCOUNT'] == row['LC_ACCOUNT']) &
+                               (df_tier_change['STATUS'] == 'Entitlement added') &
+                               (df_tier_change['TIME'] == row['TIME']),
+                               'EBS Avg. MI 30s'] = MI
 
         if not target_row_ALPHA.empty:
-            df_tier_change.loc[(df_tier_change['LP_ACCOUNT'] == row['LP_ACCOUNT']) &
-                               (df_tier_change['LC_ACCOUNT'] == row['LC_ACCOUNT']) &
-                               (df_tier_change['STATUS'] == 'Entitlement added') &
-                               (df_tier_change['TIME'] == row['TIME']),
-                               'Net Alpha (USD per mil)'] = target_row_ALPHA['aMil']
+
+            ALPHA = target_row_ALPHA['aMil']
+            REJ =target_row_ALPHA['LPRej']
+            ALPHA = ALPHA.iloc[0]
+            REJ = REJ.iloc[0]
 
             df_tier_change.loc[(df_tier_change['LP_ACCOUNT'] == row['LP_ACCOUNT']) &
                                (df_tier_change['LC_ACCOUNT'] == row['LC_ACCOUNT']) &
                                (df_tier_change['STATUS'] == 'Entitlement added') &
                                (df_tier_change['TIME'] == row['TIME']),
-                               'LP Reject %'] = target_row_ALPHA['LPRej']
+                               'Net Alpha (USD per mil)'] = ALPHA
+
+            df_tier_change.loc[(df_tier_change['LP_ACCOUNT'] == row['LP_ACCOUNT']) &
+                               (df_tier_change['LC_ACCOUNT'] == row['LC_ACCOUNT']) &
+                               (df_tier_change['STATUS'] == 'Entitlement added') &
+                               (df_tier_change['TIME'] == row['TIME']),
+                               'LP Reject %'] = REJ
+
     return df_tier_change
 
 
 def main():
     start_time_TA = time.clock()
 
-    #file_selection = r'\LC_Counterparty_Out.xlsx'
-    file_selection = r'\LC_Counterparty_Analysis.xlsx'
+    file_selection = file_selection_set()
+    path = Tier_Pull.path_set()
 
-    df_performance, df_ranking, df_tier_change, df_kdb_ALPHA, df_kdb_MI = df_load(file_selection)
+    df_performance, df_ranking, df_tier_change, df_kdb_ALPHA, df_kdb_MI = df_load(file_selection, path)
 
     if 'Out' in file_selection:
+        print('Running Out File')
         df_tier_change = nan_column(df_tier_change, 'Sweep')
 
         df_tier_change = date_conversion(df_tier_change)
 
         start_date, final_date = first_and_last_date(df_tier_change)
+
+        print(start_date)
 
         df_tier_change = sweepable_assignment(df_tier_change)
 
@@ -464,13 +470,12 @@ def main():
 
     '''
     For process of matching up KDB database and LPM data the information in the data
-    and time column has been reduced. The lowest granularity is seconds, if more
+    and time column has been reduced. The lowest granularity is seconds, if morye
     granulatity is needed would need to create additional dataframe sheet but seems
     unnecessary for now'''
 
     df_kdb_ALPHA = time_and_date_priming_kdb(df_kdb_ALPHA)
     df_kdb_MI = time_and_date_priming_kdb(df_kdb_MI)
-
 
     df_tier_change = row_of_interest(df_tier_change, df_kdb_ALPHA, df_kdb_MI)
 
@@ -478,9 +483,9 @@ def main():
                'Tier Ranking': df_ranking,
                'Tier Changes': df_tier_change}
 
-    excel_writer(df_dict, df_analysis, df_analysis_2, largest_LP, smallest_LP, largest_LC, smallest_LC)
+    excel_writer(df_dict, df_analysis, df_analysis_2, largest_LP, smallest_LP, largest_LC, smallest_LC, path)
 
-    print(time.clock() - start_time_TA, "seconds")
+    print('Tier Analysis,', time.clock() - start_time_TA, "seconds")
 
 
 if __name__ == '__main__':

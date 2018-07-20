@@ -1,17 +1,32 @@
 import pandas as pd
 import time
 import numpy as np
+import exe
+
 pd.options.mode.chained_assignment = None
 
 '''
 README
-
 Make sure that the read file and write file locations are pointed
 at the desired location, that the appropriate sheet names are given
 With python if writing the path name the backslash is an escape
 character so make sure that you have r in front of the string to indicate 
 it is to be interpreted as a raw string
 '''
+
+
+def path_set():
+    while True:
+        try:
+            exe.path
+        except AttributeError:
+            print('Using path defined in local file')
+            path_location = r"\\newco.global\newcoroot\Global\EMEA\userdir$\o_boom\Oliver"
+            break
+        else:
+            path_location = exe.path
+            break
+    return path_location
 
 
 def read_csv_file(file_location):
@@ -51,7 +66,6 @@ def check_vol_name(df):
     for traded volume. This function
     prevents errors
     """
-
     cols = list(df)
 
     for item in cols:
@@ -171,25 +185,24 @@ def add_column(df_performance, df_ranking, col_name):
     return df_ranking
 
 
-def write_files(df, df_ranking, df_tier_change):
-    write_location = pd.ExcelWriter(r"\\newco.global\newcoroot\Global\EMEA"
-                                    r"\userdir$\o_boom\Oliver\LC_Counterparty_Out.xlsx")
+def write_files(df, df_ranking, df_tier_change, path):
 
+    write_location = pd.ExcelWriter(path + r"\LC_Ranking_Out.xlsx")
     df.to_excel(write_location, 'Performance')
     df_ranking.to_excel(write_location, 'Tier Ranking')
     df_tier_change.to_excel(write_location, 'Tier Changes', index=False)
-
     write_location.save()
     return
 
 
 def main():
+
     start_time_TP = time.clock()
 
-    df_performance = read_csv_file(r"\\newco.global\newcoroot\Global\EMEA\userdir$\o_boom\Oliver\LC_Counterparty.csv")
+    path = path_set()
+    df_performance = read_csv_file(path + "\LC_INPUT_FILE.csv")
 
-    df_tier_change = read_xlsx_file(r"\\newco.global\newcoroot\Global\EMEA\userdir$"
-                                    r"\o_boom\Oliver\LPM_past_6_months - Copy.xlsx",
+    df_tier_change = read_xlsx_file(path + r"\LPM_INPUT_FILE.xlsx",
                                     'Export Worksheet')
 
     '''
@@ -236,9 +249,9 @@ def main():
     df_tier_change = split_string(df_tier_change, df_tier_change["LP_TIER"].astype(str),
                                   0, 3, 4, 'LP Floor ID', 'Tier Code')
 
-    write_files(df_performance, df_ranking, df_tier_change)
+    write_files(df_performance, df_ranking, df_tier_change, path)
 
-    print(time.clock() - start_time_TP, "seconds")
+    print('Tier Pull,', time.clock() - start_time_TP, "seconds")
 
 
 if __name__ == '__main__':
